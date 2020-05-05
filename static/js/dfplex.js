@@ -7,7 +7,7 @@
 
 var params = getParams();
 // TODO: tag colors
-var colors = [
+const colors = [
 	32, 39, 49,
 	0, 106, 255,
 	68, 184, 57,
@@ -25,8 +25,9 @@ var colors = [
 	255, 232, 102,
 	255, 250, 232
 ];
-
-var MAX_FPS = 20;
+const NUMBER_OF_COLORS = 16;
+const GRID_SIZE = 16
+const MAX_FPS = 20;
 
 var port = params.port;
 var protocol = params.protocol;
@@ -36,6 +37,7 @@ var ovrSet = params.overworld;
 var colorscheme = params.colors;
 var nick = params.nick;
 var secret = params.secret;
+var tileSize = params.size;
 
 var wsUri = 'ws://' + location.hostname + ':' + port +
 	'/' + encodeURIComponent(nick) +
@@ -44,8 +46,8 @@ console.log(wsUri);
 var active = false;
 var lastFrame = 0;
 
-var tilew  = 16;
-var tileh  = 16;
+var tilew = tileSize;
+var tileh = tileSize;
 
 var cmd = {
 	"update":  110,
@@ -194,96 +196,70 @@ function renderQueueStatus(s) {
 
 // TODO: document, split
 function renderUpdate(ctx, data, offset) {
-	var t = []; // text tile indices
-	var ovr = []; // overworld tile indices
-	var k;
-	var x;
-	var y;
-	var s;
-	var bg;
-	var fg;
-	var tilew2 = tilew << 4;
-	var tileh2 = tileh << 4;
+	let t = []; // text tile indices
+	let ovr = []; // overworld tile indices
 
-	for (k = offset; k < data.length; k += 5) {
-		x = data[k + 0];
-		y = data[k + 1];
+	for (let k = offset; k < data.length; k += 5) {
+		let dataSlice = data.slice(k, k + 5)
 
-		s = data[k + 2];
-		bg = data[k + 3] & 0xf;
-		fg = data[k + 4];
+		drawBackground(ctx, dataSlice);
 
-		var bg_x = ((bg & 3) * tilew2) + 15 * tilew;
-		var bg_y = ((bg >> 2) * tileh2) + 15 * tileh;
-		ctx.drawImage(
-			// source image (tileset)
-			cd,
-			// source rect
-			bg_x, bg_y, tilew, tileh,
-			// dest rect
-			x * tilew, y * tileh, tilew, tileh
-		);
-
-		// 6th bit: text. 7th bit: overworld
-		if ((data[k + 3] & 64)) {
+		// 6th bit: text
+		if ((dataSlice[3] & 64)) {
 			t.push(k);
 			continue;
 		}
-		if ((data[k + 3] & 128)) {
+		// 7th bit: overworld
+		if ((dataSlice[3] & 128)) {
 			ovr.push(k);
 			continue;
 		}
-		var fg_x = (s & 0xf) * tilew + ((fg & 3) * tilew2);
-		var fg_y = (s >> 4) * tileh + ((fg >> 2) * tileh2);
-		ctx.drawImage(
-			// source image (tileset)
-			cd,
-			// source rect
-			fg_x, fg_y, tilew, tileh,
-			// dest rect
-			x * tilew, y * tileh, tilew, tileh
-		);
+
+		drawForeground(ctx, dataSlice, ts.width, ts.height, cd);
 	}
 
 	// draw text
-	for (var m = 0; m < t.length; m++) {
-		k = t[m];
-		x = data[k + 0];
-		y = data[k + 1];
+	for (let k = 0; k < t.length; k++) {
+		let offset = t[k];
+		let dataSlice = data.slice(offset, offset + 5)
 
-		s = data[k + 2];
-		bg = data[k + 3];
-		fg = data[k + 4];
+		drawForeground(ctx, dataSlice, tt.width, tt.height, ct);
+	}
 
-		var i = (s & 0xf) * tilew + ((fg & 3) * tilew2);
-		var j = (s >> 4) * tileh + ((fg >> 2) * tileh2);
+	// draw overwold
+	for (let k = 0; k < ovr.length; k++) {
+		let offset = ovr[k];
+		let dataSlice = data.slice(offset, offset + 5)
+
+		drawForeground(ctx, dataSlice, tovr.width, tovr.height, covr);
+	}
+}
+
+function drawBackground(ctx, dataSlice) {
+	let x = dataSlice[0];
+	let y = dataSlice[1];
+	let bgColor = dataSlice[3] % 0xf;
+
+	let bg_x = bgColor * ts.width + (GRID_SIZE - 1) * ts.width / GRID_SIZE;
+	let bg_y = 15 * ts.height / GRID_SIZE;
 		ctx.drawImage(
-			// source image (textset)
-			ct,
-			// source rect
-			i, j, tilew, tileh,
-			// dest rect
+		cd,
+		bg_x, bg_y, ts.width / GRID_SIZE, ts.height / GRID_SIZE,
 			x * tilew, y * tileh, tilew, tileh
 		);
 	}
 	
-	for (var m = 0; m < ovr.length; m++) {
-		k = ovr[m];
-		x = data[k + 0];
-		y = data[k + 1];
+function drawForeground(ctx, dataSlice, width, height, image) {
+	let x = dataSlice[0];
+	let y = dataSlice[1];
+	let s = dataSlice[2];
+	let fgColor = dataSlice[4];
 
-		s = data[k + 2];
-		bg = data[k + 3];
-		fg = data[k + 4];
-
-		var i = (s & 0xf) * tilew + ((fg & 3) * tilew2);
-		var j = (s >> 4) * tileh + ((fg >> 2) * tileh2);
+	let fg_x = fgColor * width + (s & 0x0F) * width / GRID_SIZE;
+	let fg_y = (s >> 4) * height / GRID_SIZE;
 		ctx.drawImage(
-			// source image (textset)
-			covr,
-			// source rect
-			i, j, tilew, tileh,
-			// dest rect
+		image,
+		fg_x, fg_y, width / GRID_SIZE, height / GRID_SIZE,
 			x * tilew, y * tileh, tilew, tileh
 		);
 	}
@@ -386,51 +362,34 @@ function onMessage(evt) {
 	}
 }
 
+// FIXME: tilewh-ify
 function colorize(img, cnv) {
-	var tsw = tilew << 4;
-	var tsh = tileh << 4;
-	cnv.width = tilew << 6;
-	cnv.height = tileh << 6;
-
 	var ctx3 = cnv.getContext('2d');
 
-	for (var j = 0, j2 = 0; j < 4; j++, j2 += tsh) {
-		for (var i = 0, i2 = 0; i < 4; i++, i2 += tsw) {
-			// offset into colors array
-			var c = (j * 4 + i) * 3;
+	for (var i = 0; i < NUMBER_OF_COLORS; i++) {
+		ctx3.drawImage(img, i * img.width, 0);
 
-			if (tsw === img.width && tsh === img.height) {
-				ctx3.drawImage(img, i2, j2);
-			} else {
-				// tileset has a different size than the biggest; scale it
-				// (TODO: better solution?)
-				ctx3.drawImage(img, i2, j2, tsw, tsh);
-			}
-
-			var idata = ctx3.getImageData(i2, j2, tilew << 4, tileh << 4);
+		var idata = ctx3.getImageData(i * img.width, 0, img.width, img.height);
 			var pixels = idata.data;
 
 			for (var u = 0, len = pixels.length; u < len; u += 4) {
-				if (pixels[u] === 255 && pixels[u + 1] === 0 && pixels[u + 2] === 255) {
-					// poor man's transparency
-					pixels[u] = 0;
-					pixels[u + 1] = 0;
-					pixels[u + 2] = 0;
-					pixels[u + 3] = 0;
-				}
-				pixels[u] = pixels[u] * (colors[c + 0] / 255);
-				pixels[u + 1] = pixels[u + 1] * (colors[c + 1] / 255);
-				pixels[u + 2] = pixels[u + 2] * (colors[c + 2] / 255);
+			pixels[u] = pixels[u] * (colors[i * 3 + 0] / 255);
+			pixels[u + 1] = pixels[u + 1] * (colors[i * 3 + 1] / 255);
+			pixels[u + 2] = pixels[u + 2] * (colors[i * 3 + 2] / 255);
 			}
-			ctx3.putImageData(idata, i2, j2);
+		ctx3.putImageData(idata, i * img.width, 0);
 
 			ctx3.fillStyle = 'rgb(' +
-					colors[c + 0] + ',' +
-					colors[c + 1] + ',' +
-					colors[c + 2] + ')';
+				colors[i * 3 + 0] + ',' +
+				colors[i * 3 + 1] + ',' +
+				colors[i * 3 + 2] + ')';
 
-			ctx3.fillRect(i2 + tilew * 15, j2 + tileh * 15, tilew, tileh);
-		}
+		ctx3.fillRect(
+			(i + (GRID_SIZE - 1) / GRID_SIZE) * img.width,
+			img.height * (GRID_SIZE - 1) / GRID_SIZE,
+			img.width / GRID_SIZE,
+			img.height / GRID_SIZE
+		);
 	}
 }
 
@@ -453,16 +412,20 @@ function init() {
 	document.body.style.backgroundColor =
 		'rgb(' + colors[0] + ',' + colors[1] + ',' + colors[2] + ')';
 
-	tilew = Math.max(ts.width, tt.width, tovr.width) / 16;
-	tileh = Math.max(ts.height, tt.height, tovr.height) / 16;
-
 	cd = document.createElement('canvas');
+	
+	cd.width = ts.width * NUMBER_OF_COLORS;
+	cd.height = ts.height;
 	colorize(ts, cd);
 
 	ct = document.createElement('canvas');
+	ct.width = ts.width * NUMBER_OF_COLORS;
+	ct.height = ts.height;
 	colorize(tt, ct);
 	
 	covr = document.createElement('canvas');
+	covr.width = ts.width * NUMBER_OF_COLORS;
+	covr.height = ts.height;
 	colorize(tovr, covr);
 
 	lastFrame = performance.now();

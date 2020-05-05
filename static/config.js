@@ -14,6 +14,7 @@ var config = {
 	port: '1234',
 	protocol: 'DFPlex-invalid',
 	tiles: "Phoebus.png",
+	size: 16,
 	text: "ShizzleClean.png",
 	overworld: "ShizzleClean.png",
 	nick: "",
